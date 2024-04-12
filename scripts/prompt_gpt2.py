@@ -6,16 +6,13 @@ import glob
 import json
 import pandas as pd
 from pathlib import Path
+import torch.utils
+import torch.utils.data
 from transformers import AutoTokenizer, GenerationConfig, AutoModelForCausalLM
 import torch
 from tqdm import tqdm
 
-device = (
-    "cuda"
-    if torch.cuda.is_available()
-    else "mps" if torch.backends.mps.is_available() else "cpu"
-    # else "cpu"
-)
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 print(f"Using device: {device}")
 
@@ -28,10 +25,9 @@ def load_model(model_name):
         model_name, cache_dir="../.cached_models"
     )
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir="../.cached_models")
-
-    # if tokenizer.pad_token_id is None:
-    #     tokenizer.pad_token_id = tokenizer.eos_token_id
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name, cache_dir="../.cached_models", padding_side="left"
+    )
 
     model = model.to(device)
 
@@ -42,43 +38,62 @@ def load_model(model_name):
 def prompt_llm(
     model: AutoModelForCausalLM,
     tokenizer: AutoTokenizer,
-    message: str,
+    messages: list[str],
     temperature: float = 0.7,
     repetition_penalty: float = 1.176,
     top_p: float = 0.1,
     top_k: int = 40,
     num_beams: int = 1,
-    max_new_tokens: int = 512,
+    max_new_tokens: int = 256,
 ):
-    inputs = tokenizer(message, return_tensors="pt", add_special_tokens=False)
-    input_ids = inputs["input_ids"].to(device)
-
-    if input_ids.shape[-1] > model.config.n_positions:
-        print(f"Input too long, exceeds {model.config.n_positions} tokens")
-        return None
-
-    # https://huggingface.co/docs/transformers/main_classes/text_generation#transformers.GenerationConfig
 
     generation_config = GenerationConfig(
         ### temperature, top_p, and top_k are not needed since we are using 1 beam
         num_beams=num_beams,
         repetition_penalty=repetition_penalty,
     )
+    # print(messages)
+    tokenizer.pad_token = tokenizer.eos_token
+    inputs = tokenizer(
+        messages,
+        return_tensors="pt",
+        add_special_tokens=False,
+        padding="max_length",
+        max_length=model.config.n_positions - 256,
+        truncation=True,
+    )
+    input_ids = inputs["input_ids"].to(device)
 
-    with torch.no_grad():
-        generation_output = model.generate(
-            input_ids=input_ids,
-            generation_config=generation_config,
-            return_dict_in_generate=True,
-            output_scores=True,
-            max_new_tokens=max_new_tokens,
-            pad_token_id=tokenizer.eos_token_id,
-        )
+    dataloader = torch.utils.data.DataLoader(
+        torch.utils.data.TensorDataset(input_ids),
+        batch_size=16,
+        shuffle=False,
+    )
 
-    # result = tokenizer.batch_decode(generation_output, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
-    s = generation_output.sequences[0]
-    output = tokenizer.decode(s)
-    return output[len(message) :]
+    # https://huggingface.co/docs/transformers/main_classes/text_generation#transformers.GenerationConfig
+    generations = []
+    for idx, inputs in enumerate(dataloader):
+        with torch.no_grad():
+            output = model.generate(
+                input_ids=inputs[0],
+                generation_config=generation_config,
+                # return_dict_in_generate=True,
+                # output_scores=True,
+                max_new_tokens=max_new_tokens,
+                pad_token_id=tokenizer.eos_token_id,
+            )
+
+        # print(output)
+        # generations.extend(output)
+        # if idx == 1:
+        #     break
+
+    s = generations
+    output = tokenizer.batch_decode(s, skip_special_tokens=True)
+    # print(output[:5])
+    output = [output[0][len(messages[i]) :] for i in range(len(output))]
+    print(output[:3])
+    return output
 
 
 def create_dir(directory):
@@ -102,7 +117,6 @@ def get_language(files, senti=False, mt=False):
 
     if senti:
         lang = sorted([i.split("/")[-2] for i in files])
-        # lang = list(filter(lambda x: sum([ll in x for ll in limited_langs]) > 0, lang))
         languages = [
             "Amharic",
             # "Algerian Arabic",
@@ -146,7 +160,6 @@ def get_language(files, senti=False, mt=False):
             # "Shona",
         ]
         lang = [i.split("/")[-2].split("-")[1] for i in files]
-        # lang = list(filter(lambda x: sum([ll in x for ll in limited_langs]) > 0, lang))
 
         return dict(zip(lang, languages))
 
@@ -166,31 +179,20 @@ def sentiment(model_pipeline, tokenizer, output_dir):
     label = "{{Neutral, Positive or Negative}}"
 
     for file in tqdm(files):
-        # language = file.split('/')[-2]
-        # if language == 'eng':
+
         df = pd.read_csv(file, sep="\t", header=0)
         language = file.split("/")[-2]
         language = languages[language]
-        # [v for k, v in languages.items() if k == language][0]
         print(f"\nLanguage: {language}, using file: {file}")
         print(df.head())
-        responses = []
-        for index in tqdm(range(df.shape[0])):
-            text = df["tweet"].iloc[index]
-            message = f'Does this {language} statement; "{text}" have a {label} sentiment? Labels only'
-            input_mes = message + " "
 
-            result = prompt_llm(model_pipeline, tokenizer, input_mes)
-            responses.append(result)
+        df["prompts"] = df["tweet"].map(
+            lambda x: f'Does this {language} statement; "{x}" have a {label} sentiment? Labels only '
+        )
 
-            if index % 100 == 0:
-                print(index, "processed", result)
+        responses = prompt_llm(model_pipeline, tokenizer, list(df["prompts"]))
 
-        completions = []
-        for completion_text in responses:
-            completions.append(completion_text)
-
-        df["gpt2"] = completions
+        df["gpt2"] = responses
         df.to_csv(output_dir + language + ".tsv", sep="\t")
 
 
@@ -212,30 +214,18 @@ def news_classification(model_pipeline, tokenizer, output_dir):
         print(f"\nLanguage: {lang}, using file: {file}")
         print(df.head())
 
-        responses = []
-        for index in tqdm(range(df.shape[0])):  # df.shape[0]
-            headline = df["headline"].iloc[index]
-            content = df["text"].iloc[index]
-            text_string = headline + " " + content
-            query = " ".join(text_string.split()[:100])
+        df["prompts"] = df.apply(
+            lambda x: "Labels only. "
+            + prompt_prefix
+            + label_string
+            + prompt_suffix
+            + " ".join(f"{x['headline']} {x['text']}".split()[:100]),
+            axis=1,
+        )
 
-            message = (
-                "Labels only. " + prompt_prefix + label_string + prompt_suffix + query
-            )
+        responses = prompt_llm(model_pipeline, tokenizer, list(df["prompts"]))
 
-            input_mes = message + " "
-
-            result = prompt_llm(model_pipeline, tokenizer, input_mes)
-            responses.append(result)
-
-            if index % 100 == 0:
-                print(index, "processed", result)
-
-        completions = []
-        for completion_text in responses:
-            completions.append(completion_text)
-
-        df["gpt2"] = completions
+        df["gpt2"] = responses
         df.to_csv(output_dir + lang + ".tsv", sep="\t")
 
 
@@ -258,30 +248,22 @@ def cross_lingual_qa(model_pipeline, tokenizer, output_dir, pivot=False):
 just say that you don't know, don't try to make up an answer. Provide the answer with the least number of \
 words possible. Provide the answer only. Provide answer in {pivot_lang}. Do not repeat the question"
 
-        responses = []
-        for index in tqdm(range(len(gp_df))):
-            context = f"Context: {gp_df['context'].iloc[index]}"
-            question = (
-                f"Question: {gp_df['question_translated'].iloc[index]}"
+        gp_df["prompt"] = gp_df.apply(
+            lambda x: (
+                prompt_query
+                + "\n\n"
+                + f"Context: {x['context']}"
+                + "\n"
+                + f"Question: {x['question_translated']}"
                 if pivot
-                else f"Question: {gp_df['question_lang'].iloc[index]}"
-            )
-            message = prompt_query + "\n\n" + context + "\n" + question
+                else f"Question: {x['question_lang']}" + " "
+            ),
+            axis=1,
+        )
 
-            input_mes = message + " "
+        responses = prompt_llm(model_pipeline, tokenizer, list(gp_df["prompt"]))
 
-            result = prompt_llm(model_pipeline, tokenizer, input_mes)
-            responses.append(result)
-
-            if index % 100 == 0:
-                print(index, "processed", result)
-
-        # print(responses[:10])
-        completions = []
-        for completion_text in responses:
-            completions.append(completion_text)
-
-        gp_df["gpt2"] = completions
+        gp_df["gpt2"] = responses
         gp_df.to_csv(output_dir + language + ".tsv", sep="\t")
 
 
@@ -304,35 +286,26 @@ def machine_translation(model_pipeline, tokenizer, output_dir, reverse=False):
         print(f"\nLanguage: {target_lang}, using file: {file}")
         print(df.head())
 
-        responses = []
-        for index in tqdm(range(df.shape[0])):
-            if not reverse:
-                text = (
-                    df["en"].iloc[index]
+        if not reverse:
+            prompt_query = f"Translate the {pivot_lang} sentence below to {target_lang}. Return the translated sentence only. If you cannot translate the sentence simply say you don't know"
+            df["prompt"] = df.apply(
+                lambda x: (
+                    prompt_query + "\n" + x["en"]
                     if pivot_lang_abv == "en"
-                    else df["fr"].iloc[index]
-                )
-                prompt_query = f"Translate the {pivot_lang} sentence below to {target_lang}. Return the translated \
-                sentence only. If you cannot translate the sentence simply say you don't know"
-            else:
-                text = df[target_lang_abv].iloc[index]
-                prompt_query = f"Translate the {target_lang} sentence below to {pivot_lang}. Return the translated \
-                                sentence only. If you cannot translate the sentence simply say you don't know"
+                    else x["fr"] + " "
+                ),
+                axis=1,
+            )
+        else:
+            prompt_query = f"Translate the {target_lang} sentence below to {pivot_lang}. Return the translated sentence only. If you cannot translate the sentence simply say you don't know"
+            df["prompt"] = df.apply(
+                lambda x: prompt_query + "\n" + x[target_lang_abv] + " ",
+                axis=1,
+            )
 
-            message = prompt_query + "\n" + text
+        responses = prompt_llm(model_pipeline, tokenizer, list(df["prompt"]))
 
-            input_mes = message + " "
-
-            result = prompt_llm(model_pipeline, tokenizer, input_mes)
-            responses.append(result)
-
-            if index % 100 == 0:
-                print(index, "processed", result)
-
-        completions = []
-        for completion_text in responses:
-            completions.append(completion_text)
-        df["gpt2"] = completions
+        df["gpt2"] = responses
         if reverse:
             df.to_csv(
                 output_dir + f"{target_lang_abv}-{pivot_lang_abv}" + ".tsv", sep="\t"
@@ -354,7 +327,9 @@ List all the named entities in the passage above using $ as separator. Return on
     )
     assert len(files) != 0
 
-    files = list(filter(lambda x: sum([ll in x for ll in LIMITED_LANGS]) > 0, files))
+    files = list(
+        filter(lambda x: sum([ll in x for ll in ["ig", "sw", "ha", "yo"]]) > 0, files)
+    )
 
     for file in tqdm(files):
         with open(file) as data:
@@ -368,23 +343,13 @@ List all the named entities in the passage above using $ as separator. Return on
         print(f"\nLanguage: {file_lang}, using file: {file}")
         print(df.head())
 
-        responses = []
-        for index in tqdm(range(df.shape[0])):
-            text = df["text"].iloc[index]
-            message = text + "\n\n" + prompt_query
-            input_mes = message + " "
+        df["prompt"] = df.apply(
+            lambda x: x["text"] + "\n\n" + prompt_query + " ",
+            axis=1,
+        )
+        responses = prompt_llm(model_pipeline, tokenizer, list(df["prompt"]))
 
-            result = prompt_llm(model_pipeline, tokenizer, input_mes)
-            responses.append(result)
-
-            if index % 100 == 0:
-                print(index, "processed", result)
-
-        completions = []
-        for completion_text in responses:
-            completions.append(completion_text)
-
-        df["gpt2"] = completions
+        df["gpt2"] = responses
         df.to_csv(output_dir + file_lang + ".tsv", sep="\t")
 
 
