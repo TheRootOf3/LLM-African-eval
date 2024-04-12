@@ -66,7 +66,7 @@ def prompt_llm(
 
     dataloader = torch.utils.data.DataLoader(
         torch.utils.data.TensorDataset(input_ids),
-        batch_size=16,
+        batch_size=64,
         shuffle=False,
     )
 
@@ -82,16 +82,13 @@ def prompt_llm(
                 max_new_tokens=max_new_tokens,
                 pad_token_id=tokenizer.eos_token_id,
             )
+        print(f"generation progress: {idx}/{len(dataloader)}...")
 
-        # print(output)
-        # generations.extend(output)
-        # if idx == 1:
-        #     break
+        generations.extend(output)
 
-    s = generations
-    output = tokenizer.batch_decode(s, skip_special_tokens=True)
+    output = tokenizer.batch_decode(generations, skip_special_tokens=True)
     # print(output[:5])
-    output = [output[0][len(messages[i]) :] for i in range(len(output))]
+    output = [output[i][len(messages[i]) :] for i in range(len(output))]
     print(output[:3])
     return output
 
