@@ -25,10 +25,10 @@ LIMITED_LANGS: list[str] = ["amh", "hau", "ibo", "swa", "yor"]
 def load_model(model_name):
 
     model = AutoModelForCausalLM.from_pretrained(
-        model_name, cache_dir="./.cached_models"
+        model_name, cache_dir="../.cached_models"
     )
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir="./.cached_models")
+    tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir="../.cached_models")
 
     # if tokenizer.pad_token_id is None:
     #     tokenizer.pad_token_id = tokenizer.eos_token_id
@@ -48,7 +48,7 @@ def prompt_llm(
     top_p: float = 0.1,
     top_k: int = 40,
     num_beams: int = 1,
-    max_new_tokens: int = 100,
+    max_new_tokens: int = 512,
 ):
     inputs = tokenizer(message, return_tensors="pt", add_special_tokens=False)
     input_ids = inputs["input_ids"].to(device)
@@ -175,7 +175,7 @@ def sentiment(model_pipeline, tokenizer, output_dir):
         print(f"\nLanguage: {language}, using file: {file}")
         print(df.head())
         responses = []
-        for index in tqdm(range(df.shape[0])[:10]):
+        for index in tqdm(range(df.shape[0])):
             text = df["tweet"].iloc[index]
             message = f'Does this {language} statement; "{text}" have a {label} sentiment? Labels only'
             input_mes = message + " "
@@ -190,8 +190,8 @@ def sentiment(model_pipeline, tokenizer, output_dir):
         for completion_text in responses:
             completions.append(completion_text)
 
-        # df["gpt2"] = completions
-        # df.to_csv(output_dir + language + ".tsv", sep="\t")
+        df["gpt2"] = completions
+        df.to_csv(output_dir + language + ".tsv", sep="\t")
 
 
 def news_classification(model_pipeline, tokenizer, output_dir):
@@ -213,7 +213,7 @@ def news_classification(model_pipeline, tokenizer, output_dir):
         print(df.head())
 
         responses = []
-        for index in tqdm(range(df.shape[0])[:10]):  # df.shape[0]
+        for index in tqdm(range(df.shape[0])):  # df.shape[0]
             headline = df["headline"].iloc[index]
             content = df["text"].iloc[index]
             text_string = headline + " " + content
@@ -235,8 +235,8 @@ def news_classification(model_pipeline, tokenizer, output_dir):
         for completion_text in responses:
             completions.append(completion_text)
 
-        # df["gpt2"] = completions
-        # df.to_csv(output_dir + lang + ".tsv", sep="\t")
+        df["gpt2"] = completions
+        df.to_csv(output_dir + lang + ".tsv", sep="\t")
 
 
 def cross_lingual_qa(model_pipeline, tokenizer, output_dir, pivot=False):
@@ -259,7 +259,7 @@ just say that you don't know, don't try to make up an answer. Provide the answer
 words possible. Provide the answer only. Provide answer in {pivot_lang}. Do not repeat the question"
 
         responses = []
-        for index in tqdm(range(len(gp_df))[:10]):
+        for index in tqdm(range(len(gp_df))):
             context = f"Context: {gp_df['context'].iloc[index]}"
             question = (
                 f"Question: {gp_df['question_translated'].iloc[index]}"
@@ -281,8 +281,8 @@ words possible. Provide the answer only. Provide answer in {pivot_lang}. Do not 
         for completion_text in responses:
             completions.append(completion_text)
 
-        # gp_df["gpt2"] = completions
-        # gp_df.to_csv(output_dir + language + ".tsv", sep="\t")
+        gp_df["gpt2"] = completions
+        gp_df.to_csv(output_dir + language + ".tsv", sep="\t")
 
 
 def machine_translation(model_pipeline, tokenizer, output_dir, reverse=False):
@@ -305,7 +305,7 @@ def machine_translation(model_pipeline, tokenizer, output_dir, reverse=False):
         print(df.head())
 
         responses = []
-        for index in tqdm(range(df.shape[0])[:10]):
+        for index in tqdm(range(df.shape[0])):
             if not reverse:
                 text = (
                     df["en"].iloc[index]
@@ -332,15 +332,15 @@ def machine_translation(model_pipeline, tokenizer, output_dir, reverse=False):
         completions = []
         for completion_text in responses:
             completions.append(completion_text)
-        # df["gpt2"] = completions
-        # if reverse:
-        #     df.to_csv(
-        #         output_dir + f"{target_lang_abv}-{pivot_lang_abv}" + ".tsv", sep="\t"
-        #     )
-        # else:
-        #     df.to_csv(
-        #         output_dir + f"{pivot_lang_abv}-{target_lang_abv}" + ".tsv", sep="\t"
-        #     )
+        df["gpt2"] = completions
+        if reverse:
+            df.to_csv(
+                output_dir + f"{target_lang_abv}-{pivot_lang_abv}" + ".tsv", sep="\t"
+            )
+        else:
+            df.to_csv(
+                output_dir + f"{pivot_lang_abv}-{target_lang_abv}" + ".tsv", sep="\t"
+            )
 
 
 def named_entity_recognition(model_pipeline, tokenizer, output_dir):
@@ -369,7 +369,7 @@ List all the named entities in the passage above using $ as separator. Return on
         print(df.head())
 
         responses = []
-        for index in tqdm(range(df.shape[0])[:10]):
+        for index in tqdm(range(df.shape[0])):
             text = df["text"].iloc[index]
             message = text + "\n\n" + prompt_query
             input_mes = message + " "
@@ -384,8 +384,8 @@ List all the named entities in the passage above using $ as separator. Return on
         for completion_text in responses:
             completions.append(completion_text)
 
-        # df["gpt2"] = completions
-        # df.to_csv(output_dir + file_lang + ".tsv", sep="\t")
+        df["gpt2"] = completions
+        df.to_csv(output_dir + file_lang + ".tsv", sep="\t")
 
 
 def main(
