@@ -12,14 +12,10 @@ from transformers import AutoTokenizer, GenerationConfig, AutoModelForCausalLM
 import torch
 from tqdm import tqdm
 
-device = "cuda:0" if torch.cuda.is_available() else "cpu"
-
-print(f"Using device: {device}")
-
 LIMITED_LANGS: list[str] = ["amh", "hau", "ibo", "swa", "yor"]
 
 
-def load_model(model_name):
+def load_model(model_name, device):
 
     model = AutoModelForCausalLM.from_pretrained(
         model_name, cache_dir="../.cached_models"
@@ -39,6 +35,7 @@ def prompt_llm(
     model: AutoModelForCausalLM,
     tokenizer: AutoTokenizer,
     messages: list[str],
+    device,
     temperature: float = 0.7,
     repetition_penalty: float = 1.176,
     top_p: float = 0.1,
@@ -161,7 +158,7 @@ def get_language(files, senti=False, mt=False):
         return dict(zip(lang, languages))
 
 
-def sentiment(model_pipeline, tokenizer, output_dir):
+def sentiment(model_pipeline, tokenizer, output_dir, device):
     """Identifies tweet sentiments for different languages"""
 
     files = glob.glob(
@@ -187,13 +184,13 @@ def sentiment(model_pipeline, tokenizer, output_dir):
             lambda x: f'Does this {language} statement; "{x}" have a {label} sentiment? Labels only '
         )
 
-        responses = prompt_llm(model_pipeline, tokenizer, list(df["prompts"]))
+        responses = prompt_llm(model_pipeline, tokenizer, list(df["prompts"]), device)
 
         df["gpt2"] = responses
         df.to_csv(output_dir + language + ".tsv", sep="\t")
 
 
-def news_classification(model_pipeline, tokenizer, output_dir):
+def news_classification(model_pipeline, tokenizer, output_dir, device):
     files = glob.glob("data_repos/masakhane-news/data/**/test.tsv", recursive=True)
     assert len(files) != 0
     files = list(filter(lambda x: sum([ll in x for ll in LIMITED_LANGS]) > 0, files))
@@ -220,13 +217,13 @@ def news_classification(model_pipeline, tokenizer, output_dir):
             axis=1,
         )
 
-        responses = prompt_llm(model_pipeline, tokenizer, list(df["prompts"]))
+        responses = prompt_llm(model_pipeline, tokenizer, list(df["prompts"]), device)
 
         df["gpt2"] = responses
         df.to_csv(output_dir + lang + ".tsv", sep="\t")
 
 
-def cross_lingual_qa(model_pipeline, tokenizer, output_dir, pivot=False):
+def cross_lingual_qa(model_pipeline, tokenizer, output_dir, device, pivot=False):
     languages = ["ibo", "yor", "hau", "swa"]
     for language in tqdm(languages):
         print(language)
@@ -258,13 +255,13 @@ words possible. Provide the answer only. Provide answer in {pivot_lang}. Do not 
             axis=1,
         )
 
-        responses = prompt_llm(model_pipeline, tokenizer, list(gp_df["prompt"]))
+        responses = prompt_llm(model_pipeline, tokenizer, list(gp_df["prompt"]), device)
 
         gp_df["gpt2"] = responses
         gp_df.to_csv(output_dir + language + ".tsv", sep="\t")
 
 
-def machine_translation(model_pipeline, tokenizer, output_dir, reverse=False):
+def machine_translation(model_pipeline, tokenizer, output_dir, device, reverse=False):
     files = glob.glob("data_repos/lafand-mt/data/tsv_files/**/test.tsv", recursive=True)
     assert len(files) != 0
     files = list(filter(lambda x: sum([ll in x for ll in LIMITED_LANGS]) > 0, files))
@@ -300,7 +297,7 @@ def machine_translation(model_pipeline, tokenizer, output_dir, reverse=False):
                 axis=1,
             )
 
-        responses = prompt_llm(model_pipeline, tokenizer, list(df["prompt"]))
+        responses = prompt_llm(model_pipeline, tokenizer, list(df["prompt"]), device)
 
         df["gpt2"] = responses
         if reverse:
@@ -313,7 +310,7 @@ def machine_translation(model_pipeline, tokenizer, output_dir, reverse=False):
             )
 
 
-def named_entity_recognition(model_pipeline, tokenizer, output_dir):
+def named_entity_recognition(model_pipeline, tokenizer, output_dir, device):
     prompt_query = "Named entities refers to names of location, organisation and personal name. \n\
 For example, 'David is an employee of Amazon and he is visiting New York next week to see Esther' will be \n\
 PERSON: David $ ORGANIZATION: Amazon $ LOCATION: New York $ PERSON: Esther \n\n\
@@ -352,7 +349,7 @@ List all the named entities in the passage above using $ as separator. Return on
             lambda x: x["text"] + "\n\n" + prompt_query + " ",
             axis=1,
         )
-        responses = prompt_llm(model_pipeline, tokenizer, list(df["prompt"]))
+        responses = prompt_llm(model_pipeline, tokenizer, list(df["prompt"]), device)
 
         df["gpt2"] = responses
         df.to_csv(output_dir + file_lang + ".tsv", sep="\t")
@@ -360,6 +357,7 @@ List all the named entities in the passage above using $ as separator. Return on
 
 def main(
     args,
+    device,
     senti: bool = False,
     news: bool = False,
     qa: bool = False,
@@ -371,58 +369,64 @@ def main(
     """Runs the task functions"""
 
     model_name = args.model_path
-    model_pipeline, tokenizer = load_model(model_name)
+    model_pipeline, tokenizer = load_model(model_name, device)
 
     if senti is True:
         output_dir = f"new_results_{model_name}/sentiment/"
         create_dir(output_dir)
 
-        sentiment(model_pipeline, tokenizer, output_dir)
+        sentiment(model_pipeline, tokenizer, output_dir, device)
     elif news is True:
         output_dir = f"new_results_{model_name}/news_topic/"
         create_dir(output_dir)
 
-        news_classification(model_pipeline, tokenizer, output_dir)
+        news_classification(model_pipeline, tokenizer, output_dir, device)
     elif qa is True:
         output_dir = f"new_results_{model_name}/qa/"
         create_dir(output_dir)
 
-        cross_lingual_qa(model_pipeline, tokenizer, output_dir, pivot=True)
+        cross_lingual_qa(model_pipeline, tokenizer, output_dir, device, pivot=True)
     elif qah is True:
         output_dir = f"new_results_{model_name}/qah/"
         create_dir(output_dir)
 
-        cross_lingual_qa(model_pipeline, tokenizer, output_dir, pivot=False)
+        cross_lingual_qa(model_pipeline, tokenizer, output_dir, device, pivot=False)
     elif mt_from_en is True:
 
         output_dir = f"new_results_{model_name}/mt-to-en/"
         create_dir(output_dir)
 
-        machine_translation(model_pipeline, tokenizer, output_dir, reverse=False)
+        machine_translation(
+            model_pipeline, tokenizer, output_dir, device, reverse=False
+        )
     elif mt_to_en is True:
 
         output_dir = f"new_results_{model_name}/mt-from-en/"
         create_dir(output_dir)
 
-        machine_translation(model_pipeline, tokenizer, output_dir, reverse=True)
+        machine_translation(model_pipeline, tokenizer, output_dir, device, reverse=True)
     elif ner is True:
 
         output_dir = f"new_results_{model_name}/ner/"
         create_dir(output_dir)
 
-        named_entity_recognition(model_pipeline, tokenizer, output_dir)
+        named_entity_recognition(model_pipeline, tokenizer, output_dir, device)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", type=str, default="gpt2")
+    parser.add_argument("--device", type=str, default="cuda:0")
 
     args = parser.parse_args()
 
-    main(args, senti=True)
-    main(args, news=True)
-    main(args, qa=True)
-    main(args, qah=True)
-    main(args, mt_to_en=True)
-    main(args, mt_from_en=True)
-    main(args, ner=True)
+    device = torch.device(args.device)
+    print(f"Using device: {device}")
+
+    main(args, device, senti=True)
+    main(args, device, news=True)
+    main(args, device, qa=True)
+    main(args, device, qah=True)
+    main(args, device, mt_to_en=True)
+    main(args, device, mt_from_en=True)
+    main(args, device, ner=True)
