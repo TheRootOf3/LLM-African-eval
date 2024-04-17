@@ -325,8 +325,16 @@ List all the named entities in the passage above using $ as separator. Return on
     assert len(files) != 0
 
     files = list(
-        filter(lambda x: sum([ll in x for ll in ["ig", "sw", "ha", "yo"]]) > 0, files)
+        filter(
+            lambda x: sum(
+                [ll in x for ll in ["ig.jsonl", "sw.jsonl", "ha.jsonl", "yo.jsonl"]]
+            )
+            > 0,
+            files,
+        )
     )
+
+    print(files)
 
     for file in tqdm(files):
         with open(file) as data:
