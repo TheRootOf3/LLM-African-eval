@@ -1,6 +1,6 @@
 from __future__ import annotations
 import os
-
+import argparse
 
 import glob
 import json
@@ -12,7 +12,7 @@ from transformers import AutoTokenizer, GenerationConfig, AutoModelForCausalLM
 import torch
 from tqdm import tqdm
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 print(f"Using device: {device}")
 
@@ -359,6 +359,7 @@ List all the named entities in the passage above using $ as separator. Return on
 
 
 def main(
+    args,
     senti: bool = False,
     news: bool = False,
     qa: bool = False,
@@ -369,54 +370,59 @@ def main(
 ):
     """Runs the task functions"""
 
-    model_name = "gpt2"
+    model_name = args.model_path
     model_pipeline, tokenizer = load_model(model_name)
 
     if senti is True:
-        output_dir = f"results_{model_name}/sentiment/"
+        output_dir = f"new_results_{model_name}/sentiment/"
         create_dir(output_dir)
 
         sentiment(model_pipeline, tokenizer, output_dir)
     elif news is True:
-        output_dir = f"results_{model_name}/news_topic/"
+        output_dir = f"new_results_{model_name}/news_topic/"
         create_dir(output_dir)
 
         news_classification(model_pipeline, tokenizer, output_dir)
     elif qa is True:
-        output_dir = f"results_{model_name}/qa/"
+        output_dir = f"new_results_{model_name}/qa/"
         create_dir(output_dir)
 
         cross_lingual_qa(model_pipeline, tokenizer, output_dir, pivot=True)
     elif qah is True:
-        output_dir = f"results_{model_name}/qah/"
+        output_dir = f"new_results_{model_name}/qah/"
         create_dir(output_dir)
 
         cross_lingual_qa(model_pipeline, tokenizer, output_dir, pivot=False)
     elif mt_from_en is True:
 
-        output_dir = f"results_{model_name}/mt/"
+        output_dir = f"new_results_{model_name}/mt-to-en/"
         create_dir(output_dir)
 
         machine_translation(model_pipeline, tokenizer, output_dir, reverse=False)
     elif mt_to_en is True:
 
-        output_dir = f"results_{model_name}/mt/"
+        output_dir = f"new_results_{model_name}/mt-from-en/"
         create_dir(output_dir)
 
         machine_translation(model_pipeline, tokenizer, output_dir, reverse=True)
     elif ner is True:
 
-        output_dir = f"results_{model_name}/ner/"
+        output_dir = f"new_results_{model_name}/ner/"
         create_dir(output_dir)
 
         named_entity_recognition(model_pipeline, tokenizer, output_dir)
 
 
 if __name__ == "__main__":
-    main(senti=True)
-    main(news=True)
-    main(qa=True)
-    main(qah=True)
-    main(mt_to_en=True)
-    main(mt_from_en=True)
-    main(ner=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_path", type=str, default="gpt2")
+
+    args = parser.parse_args()
+
+    main(args, senti=True)
+    main(args, news=True)
+    main(args, qa=True)
+    main(args, qah=True)
+    main(args, mt_to_en=True)
+    main(args, mt_from_en=True)
+    main(args, ner=True)
