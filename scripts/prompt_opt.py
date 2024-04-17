@@ -18,7 +18,9 @@ LIMITED_LANGS: list[str] = ["amh", "hau", "ibo", "swa", "yor"]
 def load_model(model_name, device):
 
     model = AutoModelForCausalLM.from_pretrained(
-        model_name, cache_dir="../.cached_models"
+        model_name,
+        cache_dir="../.cached_models",
+        torch_dtype=torch.bfloat16,
     )
 
     tokenizer = AutoTokenizer.from_pretrained(
@@ -41,7 +43,7 @@ def prompt_llm(
     top_p: float = 0.1,
     top_k: int = 40,
     num_beams: int = 1,
-    max_new_tokens: int = 256,
+    max_new_tokens: int = 512,
 ):
 
     generation_config = GenerationConfig(
@@ -56,14 +58,14 @@ def prompt_llm(
         return_tensors="pt",
         add_special_tokens=False,
         padding="max_length",
-        max_length=model.config.n_positions - 256,
+        max_length=model.config.max_position_embeddings - max_new_tokens,
         truncation=True,
     )
     input_ids = inputs["input_ids"].to(device)
 
     dataloader = torch.utils.data.DataLoader(
         torch.utils.data.TensorDataset(input_ids),
-        batch_size=64,
+        batch_size=16,
         shuffle=False,
     )
 
@@ -372,9 +374,9 @@ def main(
     model_pipeline, tokenizer = load_model(model_name, device)
 
     output_base = (
-        f"new_results_{model_name.split('/')[-1]}"
+        f"results_opt1.3b/{model_name.split('/')[-1]}"
         if model_name[-1] != "/"
-        else f"new_results_{model_name.split('/')[-2]}"
+        else f"results_opt1.3b/{model_name.split('/')[-2]}"
     )
 
     if senti is True:
@@ -421,7 +423,7 @@ def main(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", type=str, default="gpt2")
+    parser.add_argument("--model_path", type=str, default="facebook/opt-1.3b")
     parser.add_argument("--device", type=str, default="cuda:0")
 
     args = parser.parse_args()

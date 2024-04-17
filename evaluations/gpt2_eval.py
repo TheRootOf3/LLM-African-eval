@@ -18,7 +18,7 @@ def senti_eval(prediction_files, metric):
         df.fillna("unknown", inplace=True)
         df["gpt2_split"] = df["gpt2_split"].apply(utils_gpt2.normalize_senti_text)
 
-        print(f"Example sentiment generations: {str(df["gpt2_split"][0])}")
+        print(f"Example sentiment generations: {str(df['gpt2_split'][0])}")
 
         lang = file.split("/")[-1].split(".")[0]
         df["gpt2_label"] = df.apply(
@@ -48,7 +48,7 @@ def ner_eval(prediction_files, metrics):
         df["gpt2"] = df["gpt2"].apply(utils_gpt2.format_ner_text, target=False)
         df = df[~(df.target == "")]
 
-        print(f"Example ner generations: {df["gpt2"].head()}")
+        print(f"Example ner generations: {df['gpt2'].head()}")
 
         f1 = utils_gpt2.calculate_ner_metrics(df, "gpt2")
         language = file.split("/")[-1].split(".")[0]
@@ -79,7 +79,7 @@ def mt_eval(prediction_files, metrics):
             .str.strip()
         )
 
-        print(f"Example mt generations: {str(df["gpt2_split"][0])}")
+        print(f"Example mt generations: {str(df['gpt2_split'][0])}")
 
         lang_full = file.split("/")[-1].split(".")[0]
 
@@ -143,7 +143,7 @@ def qa_eval(prediction_files, metrics):
         ].applymap(utils_gpt2.normalize_text)
         df = df[~(df["translated_answer"] == "")]
 
-        print(f"Example qa generations: {str(df["gpt2_response"][0])}")
+        print(f"Example qa generations: {str(df['gpt2_response'][0])}")
 
         df["gpt2_response"] = df.apply(utils_gpt2.check_yes_no, axis=1)
 
@@ -164,7 +164,7 @@ def news_eval(prediction_files, metrics):
         df["gpt2_split"] = df["gpt2_split"].str.replace("</s>", "", regex=False)
         df["gpt2_split"].fillna("", inplace=True)
 
-        print(f"Example news generations: {str(df["gpt2_split"][0])}")
+        print(f"Example news generations: {str(df['gpt2_split'][0])}")
 
         df["gpt2_label"] = df.apply(utils_gpt2.gpt2_extract_news_label, axis=1)
         df[["category", "gpt2_label"]] = df[["category", "gpt2_label"]].applymap(
@@ -207,24 +207,31 @@ def main(args, prediction_dir, task_function):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--output_directory", type=str, default="../results/gpt2/")
+    parser.add_argument(
+        "--output_directory", type=str, default="../results/gpt2-100M-yor/"
+    )
 
     args = parser.parse_known_args()
 
+    preds_dir = "../predictions/gpt2-100M-langs/100M-yor"
+
     print("QA Eval...")
-    main(args, "../predictions/results_gpt2/qa", qa_eval)
+    main(args, f"{preds_dir}/qa", qa_eval)
 
     print("QAh Eval...")
-    main(args, "../predictions/results_gpt2/qah", qa_eval)
+    main(args, f"{preds_dir}/qah", qa_eval)
 
-    print("MT Eval...")
-    main(args, "../predictions/results_gpt2/mt", mt_eval)
+    print("MT from en Eval...")
+    main(args, f"{preds_dir}/mt-from-en", mt_eval)
+
+    print("MT to en Eval...")
+    main(args, f"{preds_dir}/mt-to-en", mt_eval)
 
     print("NER Eval...")
-    main(args, "../predictions/results_gpt2/ner", ner_eval)
+    main(args, f"{preds_dir}/ner", ner_eval)
 
     print("News topic Eval...")
-    main(args, "../predictions/results_gpt2/news_topic", news_eval)
+    main(args, f"{preds_dir}/news_topic", news_eval)
 
     print("Sentiment Eval...")
-    main(args, "../predictions/results_gpt2/sentiment", senti_eval)
+    main(args, f"{preds_dir}/sentiment", senti_eval)
