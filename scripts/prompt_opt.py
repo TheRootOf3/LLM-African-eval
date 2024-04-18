@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 import argparse
+import time
 
 import glob
 import json
@@ -21,10 +22,13 @@ def load_model(model_name, device):
         model_name,
         cache_dir="../.cached_models",
         torch_dtype=torch.bfloat16,
+        # attn_implementation="flash_attention_2",  # actually slows it down!
     )
 
     tokenizer = AutoTokenizer.from_pretrained(
-        model_name, cache_dir="../.cached_models", padding_side="left"
+        model_name,
+        cache_dir="../.cached_models",
+        padding_side="left",
     )
 
     model = model.to(device)
@@ -43,7 +47,7 @@ def prompt_llm(
     top_p: float = 0.1,
     top_k: int = 40,
     num_beams: int = 1,
-    max_new_tokens: int = 512,
+    max_new_tokens: int = 256,
 ):
 
     generation_config = GenerationConfig(
@@ -58,20 +62,21 @@ def prompt_llm(
         return_tensors="pt",
         add_special_tokens=False,
         padding="max_length",
-        max_length=model.config.max_position_embeddings - max_new_tokens,
+        max_length=1024,
         truncation=True,
     )
     input_ids = inputs["input_ids"].to(device)
 
     dataloader = torch.utils.data.DataLoader(
         torch.utils.data.TensorDataset(input_ids),
-        batch_size=16,
+        batch_size=32,
         shuffle=False,
     )
 
     # https://huggingface.co/docs/transformers/main_classes/text_generation#transformers.GenerationConfig
     generations = []
     for idx, inputs in enumerate(dataloader):
+        t0 = time.time()
         with torch.no_grad():
             output = model.generate(
                 input_ids=inputs[0],
@@ -81,7 +86,10 @@ def prompt_llm(
                 max_new_tokens=max_new_tokens,
                 pad_token_id=tokenizer.eos_token_id,
             )
-        print(f"generation progress: {idx}/{len(dataloader)}...")
+            t1 = time.time()
+            dt = t1 - t0
+            t0 = t1
+        print(f"generation progress: {idx}/{len(dataloader)}... batch time: {dt:.2f}s")
 
         generations.extend(output)
 
