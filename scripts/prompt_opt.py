@@ -141,11 +141,10 @@ def get_language(files, senti=False, mt=False):
         return dict(zip(lang, languages))
     if mt:
         languages = [
-            "Yoruba",
+            "Amharic",
             # "Zulu",
             "Hausa",
             # "Setswana",
-            "Swahili",
             # "Nigerian-Pidgin",
             # "Fon",
             # "Twi",
@@ -160,7 +159,8 @@ def get_language(files, senti=False, mt=False):
             # "Ewe",
             # "Xhosa",
             "Igbo",
-            "Amharic",
+            "Swahili",
+            "Yoruba",
             # "Shona",
         ]
         lang = [i.split("/")[-2].split("-")[1] for i in files]
@@ -205,8 +205,8 @@ def news_classification(model_pipeline, tokenizer, output_dir, device):
     assert len(files) != 0
     files = list(filter(lambda x: sum([ll in x for ll in LIMITED_LANGS]) > 0, files))
 
-    prompt_prefix = 'Is this a piece of news regarding {{"'
-    prompt_suffix = '"}}? '
+    prompt_prefix = "Is this a piece of news regarding {{"
+    prompt_suffix = "}}? "
 
     for file in tqdm(files):
         file_path = Path(file)
@@ -382,9 +382,9 @@ def main(
     model_pipeline, tokenizer = load_model(model_name, device)
 
     output_base = (
-        f"results_opt1.3b/{model_name.split('/')[-1]}"
+        f"opt1.3b-lora/{model_name.split('/')[-1]}"
         if model_name[-1] != "/"
-        else f"results_opt1.3b/{model_name.split('/')[-2]}"
+        else f"opt1.3b-lora/{model_name.split('/')[-2]}"
     )
 
     if senti is True:

@@ -213,7 +213,7 @@ if __name__ == "__main__":
 
     args = parser.parse_known_args()
 
-    preds_dir = "../predictions/gpt2-100M-langs/100M-yor"
+    preds_dir = "../results_opt1.3b-lora/100M-yor"
 
     print("QA Eval...")
     main(args, f"{preds_dir}/qa", qa_eval)
